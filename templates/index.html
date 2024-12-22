@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Video Downloader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-2">YouTube 视频下载器</h1>
+        <p class="text-center text-gray-600 mb-8">请输入 YouTube 视频链接开始下载</p>
+
+        <div class="max-w-xl mx-auto">
+            <div class="flex gap-2 mb-8">
+                <input type="text" id="url" placeholder="请输入YouTube视频链接" 
+                       class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:border-blue-500">
+                <button onclick="downloadVideo()" 
+                        class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                    下载
+                </button>
+            </div>
+
+            <div id="progress" class="hidden mb-8">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="flex-1 bg-gray-200 rounded-full h-2.5">
+                        <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <span id="progress-percentage" class="text-sm text-gray-600 w-16 text-right">0%</span>
+                </div>
+                <div class="flex justify-between text-sm text-gray-600">
+                    <span id="progress-speed"></span>
+                    <span id="progress-eta"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+            {% for video in videos %}
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <video controls class="w-full mb-4 rounded">
+                    <source src="/downloads/{{ video.id }}.mp4" type="video/mp4">
+                </video>
+                <h3 class="font-bold text-lg mb-2">{{ video.title }}</h3>
+                <div class="text-sm text-gray-600">
+                    <p><strong>时长:</strong> {{ format_duration(video.duration) }}</p>
+                    <p><strong>上传者:</strong> {{ video.uploader }}</p>
+                    <p><strong>文件大小:</strong> {{ format_filesize(video.filesize) }}</p>
+                    <p><strong>存储路径:</strong> {{ video.filepath }}</p>
+                </div>
+                <p class="text-sm text-gray-500 mt-2 line-clamp-3">{{ video.description }}</p>
+                <div class="flex justify-end mt-2">
+                    <button onclick="deleteVideo('{{ video.id }}')"
+                            class="px-4 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors">
+                        删除
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script>
+        async function downloadVideo() {
+            const url = document.getElementById('url').value;
+            if (!url) return;
+
+            const progress = document.getElementById('progress');
+            const progressBar = document.getElementById('progress-bar');
+            const progressPercentage = document.getElementById('progress-percentage');
+            const progressSpeed = document.getElementById('progress-speed');
+            const progressEta = document.getElementById('progress-eta');
+            progress.classList.remove('hidden');
+
+            try {
+                const response = await fetch('/download?' + new URLSearchParams({
+                    url: url
+                }), {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    checkProgress(data.video_id);
+                } else {
+                    progressPercentage.textContent = '错误: ' + data.message;
+                }
+            } catch (error) {
+                progressPercentage.textContent = '错误: ' + error.message;
+            }
+        }
+
+        async function checkProgress(videoId) {
+            const progressBar = document.getElementById('progress-bar');
+            const progressPercentage = document.getElementById('progress-percentage');
+            const progressSpeed = document.getElementById('progress-speed');
+            const progressEta = document.getElementById('progress-eta');
+
+            while (true) {
+                const response = await fetch(`/progress/${videoId}`);
+                const data = await response.json();
+
+                if (data.status === 'downloading') {
+                    const percentage = data.percentage.replace(/[\[\]]/g, '').trim();
+                    const speed = data.speed.replace(/[\[\]]/g, '').trim();
+                    const eta = data.eta.replace(/[\[\]]/g, '').trim();
+                    
+                    progressBar.style.width = percentage;
+                    progressPercentage.textContent = percentage;
+                    progressSpeed.textContent = `速度: ${speed}`;
+                    progressEta.textContent = `剩余时间: ${eta}`;
+                } else if (data.status === 'completed') {
+                    progressBar.style.width = '100%';
+                    progressPercentage.textContent = '100%';
+                    progressSpeed.textContent = '';
+                    progressEta.textContent = '下载完成！';
+                    setTimeout(() => location.reload(), 1000);
+                    break;
+                } else if (data.status === 'error') {
+                    progressSpeed.textContent = '下载失败';
+                    progressEta.textContent = data.message;
+                    break;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        async function deleteVideo(videoId) {
+            if (!confirm('确定要删除这个视频吗?')) return;
+            
+            try {
+                const response = await fetch(`/video/${videoId}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    location.reload();
+                } else {
+                    alert('删除失败: ' + data.message);
+                }
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html> 
